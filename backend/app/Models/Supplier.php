@@ -34,6 +34,10 @@ class Supplier extends Model
         'sort_order' => 'integer',
     ];
 
+    protected $appends = [
+        'full_address',
+    ];
+
     const STATUS_ACTIVE = true;
     const STATUS_INACTIVE = false;
 

@@ -117,6 +117,13 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
             Route::post('/', [\App\Http\Controllers\Api\ShipmentController::class, 'store']);
             Route::get('/{shipment}', [\App\Http\Controllers\Api\ShipmentController::class, 'show']);
             Route::put('/{shipment}', [\App\Http\Controllers\Api\ShipmentController::class, 'update']);
+            Route::delete('/{shipment}', [\App\Http\Controllers\Api\ShipmentController::class, 'destroy']);
+            Route::post('/{shipment}/ship', [\App\Http\Controllers\Api\ShipmentController::class, 'ship']);
+            Route::post('/{shipment}/mark-picked', [\App\Http\Controllers\Api\ShipmentController::class, 'markPicked']);
+            Route::post('/{shipment}/mark-in-transit', [\App\Http\Controllers\Api\ShipmentController::class, 'markInTransit']);
+            Route::post('/{shipment}/mark-delivered', [\App\Http\Controllers\Api\ShipmentController::class, 'markDelivered']);
+            Route::post('/{shipment}/mark-failed', [\App\Http\Controllers\Api\ShipmentController::class, 'markFailed']);
+            Route::post('/{shipment}/mark-returned', [\App\Http\Controllers\Api\ShipmentController::class, 'markReturned']);
             Route::post('/{shipment}/update-tracking', [\App\Http\Controllers\Api\ShipmentController::class, 'updateTracking']);
         });
     });

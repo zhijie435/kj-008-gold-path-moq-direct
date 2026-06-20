@@ -50,6 +50,17 @@ class MoqOrder extends Model
         'completed_at' => 'datetime',
     ];
 
+    protected $appends = [
+        'status_label',
+        'status_color',
+        'full_address',
+        'total_quantity',
+        'shipped_quantity',
+        'unpaid_amount',
+        'is_fully_shipped',
+        'is_fully_paid',
+    ];
+
     const STATUS_PENDING = 'pending';
     const STATUS_CONFIRMED = 'confirmed';
     const STATUS_PROCESSING = 'processing';

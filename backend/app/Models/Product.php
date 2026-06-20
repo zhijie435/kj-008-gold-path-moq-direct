@@ -48,6 +48,11 @@ class Product extends Model
         'sort_order' => 'integer',
     ];
 
+    protected $appends = [
+        'is_low_stock',
+        'profit_margin',
+    ];
+
     const STATUS_ACTIVE = true;
     const STATUS_INACTIVE = false;
 

@@ -33,7 +33,7 @@ class ProductController extends Controller
             $query->where('is_active', $request->input('is_active'));
         }
 
-        if ($request->boolean('low_stock')) {
+        if ($request->boolean('low_stock') || $request->boolean('is_low_stock')) {
             $query->whereRaw('stock_quantity <= safety_stock');
         }
 

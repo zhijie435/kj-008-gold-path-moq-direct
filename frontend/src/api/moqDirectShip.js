@@ -23,6 +23,14 @@ export function createMoqOrder(data) {
   })
 }
 
+export function updateMoqOrder(id, data) {
+  return request({
+    url: `/v1/moq-direct-ship/orders/${id}`,
+    method: 'put',
+    data
+  })
+}
+
 export function confirmMoqOrder(id) {
   return request({
     url: `/v1/moq-direct-ship/orders/${id}/confirm`,

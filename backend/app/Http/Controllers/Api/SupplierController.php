@@ -10,7 +10,7 @@ class SupplierController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Supplier::withCount('products');
+        $query = Supplier::withCount(['products', 'orders']);
 
         if ($request->filled('keyword')) {
             $keyword = $request->input('keyword');
@@ -49,7 +49,7 @@ class SupplierController extends Controller
 
     public function show(Supplier $supplier)
     {
-        $supplier->load('products');
+        $supplier->loadCount(['products', 'orders'])->load('products');
         return response()->json([
             'code' => 0,
             'message' => 'success',

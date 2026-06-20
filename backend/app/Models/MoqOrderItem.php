@@ -31,6 +31,11 @@ class MoqOrderItem extends Model
         'shipped_quantity' => 'integer',
     ];
 
+    protected $appends = [
+        'unshipped_quantity',
+        'is_fully_shipped',
+    ];
+
     public function order()
     {
         return $this->belongsTo(MoqOrder::class, 'moq_order_id');

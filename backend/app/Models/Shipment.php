@@ -38,6 +38,13 @@ class Shipment extends Model
         'delivered_at' => 'datetime',
     ];
 
+    protected $appends = [
+        'status_label',
+        'status_color',
+        'carrier_label',
+        'tracking_url',
+    ];
+
     const STATUS_PENDING = 'pending';
     const STATUS_PICKED = 'picked';
     const STATUS_SHIPPED = 'shipped';
