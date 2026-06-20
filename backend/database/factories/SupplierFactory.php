@@ -23,7 +23,7 @@ class SupplierFactory extends Factory
             'address' => fake()->address(),
             'business_license' => fake()->bothify('##############'),
             'bank_name' => fake()->company(),
-            'bank_account' => fake()->bankAccountNumber(),
+            'bank_account' => fake()->numerify('####################'),
             'tax_number' => fake()->bothify('##############'),
             'remark' => fake()->text(100),
             'is_active' => true,

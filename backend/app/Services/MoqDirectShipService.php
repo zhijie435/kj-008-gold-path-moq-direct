@@ -26,7 +26,7 @@ class MoqDirectShipService
     {
         $prefix = 'MOQ';
         $date = now()->format('Ymd');
-        $random = strtoupper(Str::random(6));
+        $random = strtoupper(Str::random(9));
         return "{$prefix}{$date}{$random}";
     }
 
