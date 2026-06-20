@@ -153,8 +153,8 @@ class ShipmentController extends Controller
                     'status' => MoqOrder::STATUS_SHIPPED,
                     'shipped_at' => now(),
                 ]);
-            } elseif ($order->status === MoqOrder::STATUS_CONFIRMED || $order->status === MoqOrder::STATUS_PROCESSING) {
-                $order->update(['status' => MoqOrder::STATUS_SHIPPED]);
+            } elseif (in_array($order->status, [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING])) {
+                $order->update(['status' => MoqOrder::STATUS_PROCESSING]);
             }
 
             $shipment->load(['order.items']);
@@ -211,10 +211,6 @@ class ShipmentController extends Controller
         return DB::transaction(function () use ($shipment) {
             $order = $shipment->order;
 
-            foreach ($order->items as $item) {
-                $item->update(['shipped_quantity' => max(0, $item->shipped_quantity - $item->quantity)]);
-            }
-
             $shipment->delete();
 
             $order->refresh();
@@ -245,6 +241,19 @@ class ShipmentController extends Controller
             'status' => Shipment::STATUS_SHIPPED,
             'shipped_at' => now(),
         ]);
+
+        $order = $shipment->order;
+        if ($order) {
+            $order->refresh();
+            if ($order->is_fully_shipped) {
+                $order->update([
+                    'status' => MoqOrder::STATUS_SHIPPED,
+                    'shipped_at' => now(),
+                ]);
+            } elseif (in_array($order->status, [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PENDING])) {
+                $order->update(['status' => MoqOrder::STATUS_PROCESSING]);
+            }
+        }
 
         return response()->json([
             'code' => 0,
@@ -307,6 +316,7 @@ class ShipmentController extends Controller
         ]);
 
         $order = $shipment->order;
+        $order->load('shipments');
         $allDelivered = $order->shipments->every(function ($s) {
             return $s->status === Shipment::STATUS_DELIVERED;
         });
@@ -425,6 +435,7 @@ class ShipmentController extends Controller
 
                         $order = $shipment->order;
                         if ($order) {
+                            $order->load('shipments');
                             $allDelivered = $order->shipments->every(function ($s) {
                                 return $s->status === Shipment::STATUS_DELIVERED;
                             });

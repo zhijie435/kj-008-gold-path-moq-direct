@@ -220,6 +220,15 @@ class MoqOrderController extends Controller
             ], 422);
         }
 
+        if (in_array($order->status, [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING])) {
+            foreach ($order->items as $item) {
+                $product = Product::find($item->product_id);
+                if ($product) {
+                    $product->increment('stock_quantity', $item->quantity - $item->shipped_quantity);
+                }
+            }
+        }
+
         $order->delete();
 
         return response()->json([
@@ -239,17 +248,30 @@ class MoqOrderController extends Controller
             ], 422);
         }
 
-        $order->update([
-            'status' => MoqOrder::STATUS_CONFIRMED,
-            'confirmed_at' => now(),
-            'updated_by' => auth()->id(),
-        ]);
+        return DB::transaction(function () use ($order) {
+            $order->update([
+                'status' => MoqOrder::STATUS_CONFIRMED,
+                'confirmed_at' => now(),
+                'updated_by' => auth()->id(),
+            ]);
 
-        return response()->json([
-            'code' => 0,
-            'message' => '订单确认成功',
-            'data' => $order,
-        ]);
+            foreach ($order->items as $item) {
+                $product = Product::find($item->product_id);
+                if ($product) {
+                    $newStock = $product->stock_quantity - $item->quantity;
+                    if ($newStock < 0) {
+                        throw new \InvalidArgumentException("产品 {$product->name} 库存不足");
+                    }
+                    $product->update(['stock_quantity' => $newStock]);
+                }
+            }
+
+            return response()->json([
+                'code' => 0,
+                'message' => '订单确认成功',
+                'data' => $order,
+            ]);
+        });
     }
 
     public function cancel(MoqOrder $order, Request $request)
@@ -262,17 +284,28 @@ class MoqOrderController extends Controller
             ], 422);
         }
 
-        $order->update([
-            'status' => MoqOrder::STATUS_CANCELLED,
-            'internal_note' => $request->input('reason') ? ($order->internal_note ? $order->internal_note . "\n" : '') . '取消原因：' . $request->input('reason') : $order->internal_note,
-            'updated_by' => auth()->id(),
-        ]);
+        return DB::transaction(function () use ($order, $request) {
+            if (in_array($order->status, [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING])) {
+                foreach ($order->items as $item) {
+                    $product = Product::find($item->product_id);
+                    if ($product) {
+                        $product->increment('stock_quantity', $item->quantity - $item->shipped_quantity);
+                    }
+                }
+            }
 
-        return response()->json([
-            'code' => 0,
-            'message' => '订单取消成功',
-            'data' => $order,
-        ]);
+            $order->update([
+                'status' => MoqOrder::STATUS_CANCELLED,
+                'internal_note' => $request->input('reason') ? ($order->internal_note ? $order->internal_note . "\n" : '') . '取消原因：' . $request->input('reason') : $order->internal_note,
+                'updated_by' => auth()->id(),
+            ]);
+
+            return response()->json([
+                'code' => 0,
+                'message' => '订单取消成功',
+                'data' => $order,
+            ]);
+        });
     }
 
     public function startProcessing(MoqOrder $order)
@@ -307,17 +340,28 @@ class MoqOrderController extends Controller
             ], 422);
         }
 
-        $order->update([
-            'status' => MoqOrder::STATUS_COMPLETED,
-            'completed_at' => now(),
-            'updated_by' => auth()->id(),
-        ]);
+        return DB::transaction(function () use ($order) {
+            $order->update([
+                'status' => MoqOrder::STATUS_COMPLETED,
+                'completed_at' => now(),
+                'updated_by' => auth()->id(),
+            ]);
 
-        return response()->json([
-            'code' => 0,
-            'message' => '订单已完成',
-            'data' => $order,
-        ]);
+            foreach ($order->shipments as $shipment) {
+                if ($shipment->status !== \App\Models\Shipment::STATUS_DELIVERED) {
+                    $shipment->update([
+                        'status' => \App\Models\Shipment::STATUS_DELIVERED,
+                        'delivered_at' => now(),
+                    ]);
+                }
+            }
+
+            return response()->json([
+                'code' => 0,
+                'message' => '订单已完成',
+                'data' => $order,
+            ]);
+        });
     }
 
     public function getStatusOptions()
