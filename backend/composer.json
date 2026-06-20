@@ -1,14 +1,13 @@
 {
     "name": "laravel/laravel",
     "type": "project",
-    "description": "在线课程教务系统 - 国内小批量MOQ直发",
-    "keywords": ["laravel", "framework", "education", "moq", "direct-ship"],
+    "description": "国内小批量MOQ直发管理系统后端",
+    "keywords": ["laravel", "framework", "moq", "direct-shipment"],
     "license": "MIT",
     "require": {
         "php": "^8.2",
         "laravel/framework": "^11.0",
-        "laravel/sanctum": "^4.0",
-        "spatie/laravel-permission": "^6.0"
+        "laravel/sanctum": "^4.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

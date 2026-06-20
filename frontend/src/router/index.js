@@ -3,31 +3,13 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    redirect: '/moq-orders'
+    redirect: '/moq-direct-ship'
   },
   {
-    path: '/moq-orders',
-    name: 'MoqOrders',
-    component: () => import('@/views/MoqOrder/index.vue'),
-    meta: { title: 'MOQ订单管理' }
-  },
-  {
-    path: '/shipments',
-    name: 'Shipments',
-    component: () => import('@/views/Shipment/index.vue'),
-    meta: { title: '发货管理' }
-  },
-  {
-    path: '/products',
-    name: 'Products',
-    component: () => import('@/views/Product/index.vue'),
-    meta: { title: '商品管理' }
-  },
-  {
-    path: '/suppliers',
-    name: 'Suppliers',
-    component: () => import('@/views/Supplier/index.vue'),
-    meta: { title: '供应商管理' }
+    path: '/moq-direct-ship',
+    name: 'MoqDirectShip',
+    component: () => import('@/views/MoqDirectShip/index.vue'),
+    meta: { title: '国内小批量MOQ直发' }
   },
   {
     path: '/:pathMatch(.*)*',

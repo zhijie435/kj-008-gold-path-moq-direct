@@ -3,7 +3,7 @@
     <el-aside width="220px" class="app-aside">
       <div class="logo">
         <el-icon size="28" color="#fff"><Goods /></el-icon>
-        <span>MOQ直发管理</span>
+        <span>P1 金路径二</span>
       </div>
       <el-menu
         :default-active="activeMenu"
@@ -13,21 +13,9 @@
         active-text-color="#ffffff"
         class="app-menu"
       >
-        <el-menu-item index="/moq-orders">
-          <el-icon><Document /></el-icon>
-          <span>MOQ订单</span>
-        </el-menu-item>
-        <el-menu-item index="/shipments">
-          <el-icon><Van /></el-icon>
-          <span>发货管理</span>
-        </el-menu-item>
-        <el-menu-item index="/products">
-          <el-icon><Goods /></el-icon>
-          <span>商品管理</span>
-        </el-menu-item>
-        <el-menu-item index="/suppliers">
-          <el-icon><OfficeBuilding /></el-icon>
-          <span>供应商管理</span>
+        <el-menu-item index="/moq-direct-ship">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>MOQ直发管理</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -73,10 +61,7 @@ const route = useRoute()
 const activeMenu = computed(() => route.path)
 
 const pageTitleMap = {
-  '/moq-orders': 'MOQ订单管理',
-  '/shipments': '发货管理',
-  '/products': '商品管理',
-  '/suppliers': '供应商管理'
+  '/moq-direct-ship': '国内小批量MOQ直发'
 }
 
 const currentPageTitle = computed(() => pageTitleMap[route.path] || '首页')
@@ -145,7 +130,7 @@ const currentPageTitle = computed(() => pageTitleMap[route.path] || '首页')
 
 .app-main {
   background: #f0f2f5;
-  padding: 20px;
+  padding: 0;
   overflow-y: auto;
 }
 </style>

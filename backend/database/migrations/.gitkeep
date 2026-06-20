@@ -1,0 +1,20 @@
+<?php
+
+return [
+
+    'paths' => [
+        'migrations' => [
+            __DIR__.'/../database/migrations',
+        ],
+        'seeds' => [
+            __DIR__.'/../database/seeders',
+        ],
+    ],
+
+    'migration_base_class' => Illuminate\Database\Migrations\Migration::class,
+
+    'environments' => [
+        'default_migration_table' => 'migrations',
+    ],
+
+];
