@@ -152,6 +152,10 @@ class Shipment extends Model
 
     public function getTrackingUrlAttribute()
     {
+        if (!$this->isTrackable()) {
+            return null;
+        }
+
         $trackingUrls = [
             self::CARRIER_SF => 'https://www.sf-express.com/sf-service-web/service/bill/search/routes?',
             self::CARRIER_YTO => 'https://www.yto.net.cn/api/track/query?',
