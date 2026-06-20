@@ -2,70 +2,48 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\Moq\InsufficientStockException;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Services\MoqDirectShipService;
 use Illuminate\Http\Request;
 
 class ProductController extends Controller
 {
+    public function __construct(protected MoqDirectShipService $service)
+    {
+    }
+
     public function index(Request $request)
     {
-        $query = Product::with('supplier');
+        $this->authorize('view-products');
 
-        if ($request->filled('keyword')) {
-            $keyword = $request->input('keyword');
-            $query->where(function ($q) use ($keyword) {
-                $q->where('name', 'like', "%{$keyword}%")
-                    ->orWhere('sku', 'like', "%{$keyword}%")
-                    ->orWhere('barcode', 'like', "%{$keyword}%");
-            });
-        }
-
-        if ($request->filled('supplier_id')) {
-            $query->where('supplier_id', $request->input('supplier_id'));
-        }
-
-        if ($request->filled('category')) {
-            $query->where('category', $request->input('category'));
-        }
-
-        if ($request->filled('is_active')) {
-            $query->where('is_active', $request->input('is_active'));
-        }
-
-        if ($request->boolean('low_stock') || $request->boolean('is_low_stock')) {
-            $query->whereRaw('stock_quantity <= safety_stock');
-        }
-
-        $query->orderBy('sort_order', 'asc')->orderBy('id', 'desc');
-
-        $perPage = $request->input('per_page', 15);
-        $products = $query->paginate($perPage);
-
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => [
-                'list' => $products->items(),
-                'total' => $products->total(),
-                'current_page' => $products->currentPage(),
-                'per_page' => $products->perPage(),
-            ],
+        $products = $this->service->getProductList([
+            'keyword' => $request->input('keyword'),
+            'supplier_id' => $request->input('supplier_id'),
+            'category' => $request->input('category'),
+            'is_active' => $request->input('is_active'),
+            'is_low_stock' => $request->boolean('low_stock') || $request->boolean('is_low_stock') ? 1 : null,
+            'moq_min' => $request->input('moq_min'),
+            'moq_max' => $request->input('moq_max'),
+            'page' => $request->input('page'),
+            'per_page' => $request->input('per_page', 15),
         ]);
+
+        return $this->respondPaginated($products);
     }
 
     public function show(Product $product)
     {
-        $product->load('supplier');
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => $product,
-        ]);
+        $this->authorize('view-products');
+
+        return $this->respond($product->load('supplier'));
     }
 
     public function store(Request $request)
     {
+        $this->authorize('manage-products');
+
         $validated = $request->validate([
             'name' => 'required|string|max:200',
             'sku' => 'required|string|max:50|unique:products,sku',
@@ -91,20 +69,16 @@ class ProductController extends Controller
         ]);
 
         $product = Product::create(array_merge($validated, [
-            'created_by' => auth()->id(),
+            'created_by' => $request->user()?->id,
         ]));
 
-        $product->load('supplier');
-
-        return response()->json([
-            'code' => 0,
-            'message' => '商品创建成功',
-            'data' => $product,
-        ], 201);
+        return $this->respondCreated($product->load('supplier'), '商品创建成功');
     }
 
     public function update(Request $request, Product $product)
     {
+        $this->authorize('manage-products');
+
         $validated = $request->validate([
             'name' => 'sometimes|string|max:200',
             'sku' => 'sometimes|string|max:50|unique:products,sku,' . $product->id,
@@ -130,63 +104,51 @@ class ProductController extends Controller
         ]);
 
         $product->update(array_merge($validated, [
-            'updated_by' => auth()->id(),
+            'updated_by' => $request->user()?->id,
         ]));
 
-        $product->load('supplier');
-
-        return response()->json([
-            'code' => 0,
-            'message' => '商品更新成功',
-            'data' => $product,
-        ]);
+        return $this->respond($product->load('supplier'), '商品更新成功');
     }
 
     public function destroy(Product $product)
     {
+        $this->authorize('delete-products');
+
         $product->delete();
 
-        return response()->json([
-            'code' => 0,
-            'message' => '商品删除成功',
-            'data' => null,
-        ]);
+        return $this->respond(null, '商品删除成功');
     }
 
     public function toggleActive(Product $product)
     {
+        $this->authorize('manage-products');
+
         $product->update([
             'is_active' => !$product->is_active,
-            'updated_by' => auth()->id(),
+            'updated_by' => request()->user()?->id,
         ]);
 
-        return response()->json([
-            'code' => 0,
-            'message' => '状态切换成功',
-            'data' => $product,
-        ]);
+        return $this->respond($product, '状态切换成功');
     }
 
     public function getUnitOptions()
     {
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => Product::getUnitOptions(),
-        ]);
+        $this->authorize('view-products');
+
+        return $this->respond(Product::getUnitOptions());
     }
 
     public function getStatusOptions()
     {
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => Product::getStatusOptions(),
-        ]);
+        $this->authorize('view-products');
+
+        return $this->respond(Product::getStatusOptions());
     }
 
     public function getCategories()
     {
+        $this->authorize('view-products');
+
         $categories = Product::whereNotNull('category')
             ->where('category', '!=', '')
             ->distinct()
@@ -194,15 +156,13 @@ class ProductController extends Controller
             ->values()
             ->toArray();
 
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => $categories,
-        ]);
+        return $this->respond($categories);
     }
 
     public function updateStock(Request $request, Product $product)
     {
+        $this->authorize('manage-products');
+
         $validated = $request->validate([
             'quantity' => 'required|integer',
             'type' => 'required|in:in,out,adjust',
@@ -212,21 +172,23 @@ class ProductController extends Controller
         $quantity = $validated['quantity'];
         $type = $validated['type'];
 
+        if ($type === 'out' && $quantity > $product->stock_quantity) {
+            throw new InsufficientStockException(
+                "产品 {$product->name} 库存不足，当前库存 {$product->stock_quantity} {$product->unit}"
+            );
+        }
+
         $newStock = match ($type) {
             'in' => $product->stock_quantity + $quantity,
-            'out' => max(0, $product->stock_quantity - $quantity),
+            'out' => $product->stock_quantity - $quantity,
             'adjust' => $quantity,
         };
 
         $product->update([
             'stock_quantity' => $newStock,
-            'updated_by' => auth()->id(),
+            'updated_by' => $request->user()?->id,
         ]);
 
-        return response()->json([
-            'code' => 0,
-            'message' => '库存更新成功',
-            'data' => $product,
-        ]);
+        return $this->respond($product, '库存更新成功');
     }
 }

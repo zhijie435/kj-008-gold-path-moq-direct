@@ -2,63 +2,46 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\Moq\MoqDirectShipException;
 use App\Http\Controllers\Controller;
 use App\Models\Supplier;
+use App\Services\MoqDirectShipService;
 use Illuminate\Http\Request;
 
 class SupplierController extends Controller
 {
+    public function __construct(protected MoqDirectShipService $service)
+    {
+    }
+
     public function index(Request $request)
     {
-        $query = Supplier::withCount(['products', 'orders']);
+        $this->authorize('view-suppliers');
 
-        if ($request->filled('keyword')) {
-            $keyword = $request->input('keyword');
-            $query->where(function ($q) use ($keyword) {
-                $q->where('name', 'like', "%{$keyword}%")
-                    ->orWhere('code', 'like', "%{$keyword}%")
-                    ->orWhere('contact_person', 'like', "%{$keyword}%")
-                    ->orWhere('phone', 'like', "%{$keyword}%");
-            });
-        }
-
-        if ($request->filled('is_active')) {
-            $query->where('is_active', $request->input('is_active'));
-        }
-
-        if ($request->filled('province')) {
-            $query->where('province', $request->input('province'));
-        }
-
-        $query->orderBy('sort_order', 'asc')->orderBy('id', 'desc');
-
-        $perPage = $request->input('per_page', 15);
-        $suppliers = $query->paginate($perPage);
-
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => [
-                'list' => $suppliers->items(),
-                'total' => $suppliers->total(),
-                'current_page' => $suppliers->currentPage(),
-                'per_page' => $suppliers->perPage(),
-            ],
+        $suppliers = $this->service->getSupplierList([
+            'keyword' => $request->input('keyword'),
+            'is_active' => $request->input('is_active'),
+            'province' => $request->input('province'),
+            'page' => $request->input('page'),
+            'per_page' => $request->input('per_page', 15),
         ]);
+
+        return $this->respondPaginated($suppliers);
     }
 
     public function show(Supplier $supplier)
     {
-        $supplier->loadCount(['products', 'orders'])->load('products');
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => $supplier,
-        ]);
+        $this->authorize('view-suppliers');
+
+        return $this->respond(
+            $supplier->loadCount(['products', 'orders'])->load('products')
+        );
     }
 
     public function store(Request $request)
     {
+        $this->authorize('manage-suppliers');
+
         $validated = $request->validate([
             'name' => 'required|string|max:200',
             'code' => 'required|string|max:50|unique:suppliers,code',
@@ -79,18 +62,16 @@ class SupplierController extends Controller
         ]);
 
         $supplier = Supplier::create(array_merge($validated, [
-            'created_by' => auth()->id(),
+            'created_by' => $request->user()?->id,
         ]));
 
-        return response()->json([
-            'code' => 0,
-            'message' => '供应商创建成功',
-            'data' => $supplier,
-        ], 201);
+        return $this->respondCreated($supplier, '供应商创建成功');
     }
 
     public function update(Request $request, Supplier $supplier)
     {
+        $this->authorize('manage-suppliers');
+
         $validated = $request->validate([
             'name' => 'sometimes|string|max:200',
             'code' => 'sometimes|string|max:50|unique:suppliers,code,' . $supplier->id,
@@ -111,69 +92,53 @@ class SupplierController extends Controller
         ]);
 
         $supplier->update(array_merge($validated, [
-            'updated_by' => auth()->id(),
+            'updated_by' => $request->user()?->id,
         ]));
 
-        return response()->json([
-            'code' => 0,
-            'message' => '供应商更新成功',
-            'data' => $supplier,
-        ]);
+        return $this->respond($supplier, '供应商更新成功');
     }
 
     public function destroy(Supplier $supplier)
     {
+        $this->authorize('delete-suppliers');
+
         if ($supplier->products()->exists()) {
-            return response()->json([
-                'code' => 422,
-                'message' => '该供应商下存在商品，无法删除',
-                'data' => null,
-            ], 422);
+            throw new MoqDirectShipException('该供应商下存在商品，无法删除');
         }
 
         $supplier->delete();
 
-        return response()->json([
-            'code' => 0,
-            'message' => '供应商删除成功',
-            'data' => null,
-        ]);
+        return $this->respond(null, '供应商删除成功');
     }
 
     public function toggleActive(Supplier $supplier)
     {
+        $this->authorize('manage-suppliers');
+
         $supplier->update([
             'is_active' => !$supplier->is_active,
-            'updated_by' => auth()->id(),
+            'updated_by' => request()->user()?->id,
         ]);
 
-        return response()->json([
-            'code' => 0,
-            'message' => '状态切换成功',
-            'data' => $supplier,
-        ]);
+        return $this->respond($supplier, '状态切换成功');
     }
 
     public function getStatusOptions()
     {
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => Supplier::getStatusOptions(),
-        ]);
+        $this->authorize('view-suppliers');
+
+        return $this->respond(Supplier::getStatusOptions());
     }
 
     public function allActive()
     {
+        $this->authorize('view-suppliers');
+
         $suppliers = Supplier::where('is_active', true)
             ->orderBy('sort_order', 'asc')
             ->orderBy('name', 'asc')
             ->get(['id', 'name', 'code', 'contact_person', 'phone']);
 
-        return response()->json([
-            'code' => 0,
-            'message' => 'success',
-            'data' => $suppliers,
-        ]);
+        return $this->respond($suppliers);
     }
 }

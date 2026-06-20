@@ -1,5 +1,6 @@
 <?php
 
 return [
-    // Symfony\Component\ErrorHandler\DebugClassLoader::enable();
+    App\Providers\AppServiceProvider::class,
+    App\Providers\MoqDirectShipServiceProvider::class,
 ];

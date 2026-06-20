@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Exceptions\Moq\InvalidStatusTransitionException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -87,6 +88,43 @@ class Shipment extends Model
             ['value' => self::CARRIER_JD, 'label' => '京东物流'],
             ['value' => self::CARRIER_EMS, 'label' => 'EMS'],
         ];
+    }
+
+    const STATUS_TRANSITIONS = [
+        self::STATUS_PENDING => [self::STATUS_PICKED, self::STATUS_SHIPPED, self::STATUS_FAILED],
+        self::STATUS_PICKED => [self::STATUS_SHIPPED, self::STATUS_IN_TRANSIT, self::STATUS_DELIVERED, self::STATUS_FAILED],
+        self::STATUS_SHIPPED => [self::STATUS_IN_TRANSIT, self::STATUS_DELIVERED, self::STATUS_FAILED, self::STATUS_RETURNED],
+        self::STATUS_IN_TRANSIT => [self::STATUS_DELIVERED, self::STATUS_FAILED, self::STATUS_RETURNED],
+        self::STATUS_DELIVERED => [self::STATUS_RETURNED],
+        self::STATUS_FAILED => [self::STATUS_RETURNED],
+        self::STATUS_RETURNED => [],
+    ];
+
+    public function canTransitionTo(string $target): bool
+    {
+        return in_array($target, self::STATUS_TRANSITIONS[$this->status] ?? [], true);
+    }
+
+    public function assertCanTransitionTo(string $target): void
+    {
+        if (!$this->canTransitionTo($target)) {
+            throw InvalidStatusTransitionException::for($this->status, $target, '运单');
+        }
+    }
+
+    public function isTrackable(): bool
+    {
+        return !empty($this->tracking_no);
+    }
+
+    public function isDelivered(): bool
+    {
+        return $this->status === self::STATUS_DELIVERED;
+    }
+
+    public function isInTransit(): bool
+    {
+        return in_array($this->status, [self::STATUS_SHIPPED, self::STATUS_IN_TRANSIT], true);
     }
 
     public function order()

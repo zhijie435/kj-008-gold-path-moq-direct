@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Exceptions\Moq\InvalidStatusTransitionException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -110,6 +111,53 @@ class MoqOrder extends Model
             ['value' => self::PAYMENT_CASH, 'label' => '现金'],
             ['value' => self::PAYMENT_CREDIT, 'label' => '赊账'],
         ];
+    }
+
+    const STATUS_TRANSITIONS = [
+        self::STATUS_PENDING => [self::STATUS_CONFIRMED, self::STATUS_CANCELLED],
+        self::STATUS_CONFIRMED => [self::STATUS_PROCESSING, self::STATUS_SHIPPED, self::STATUS_CANCELLED],
+        self::STATUS_PROCESSING => [self::STATUS_SHIPPED, self::STATUS_PROCESSING, self::STATUS_CANCELLED],
+        self::STATUS_SHIPPED => [self::STATUS_COMPLETED, self::STATUS_REFUNDED, self::STATUS_SHIPPED],
+        self::STATUS_COMPLETED => [self::STATUS_REFUNDED],
+        self::STATUS_CANCELLED => [],
+        self::STATUS_REFUNDED => [],
+    ];
+
+    public function canTransitionTo(string $target): bool
+    {
+        return in_array($target, self::STATUS_TRANSITIONS[$this->status] ?? [], true);
+    }
+
+    public function assertCanTransitionTo(string $target): void
+    {
+        if (!$this->canTransitionTo($target)) {
+            throw InvalidStatusTransitionException::for($this->status, $target);
+        }
+    }
+
+    public function isShippable(): bool
+    {
+        return in_array($this->status, [self::STATUS_CONFIRMED, self::STATUS_PROCESSING, self::STATUS_SHIPPED], true);
+    }
+
+    public function isPayable(): bool
+    {
+        return !in_array($this->status, [self::STATUS_CANCELLED, self::STATUS_REFUNDED], true);
+    }
+
+    public function isRefundable(): bool
+    {
+        return in_array($this->status, [self::STATUS_SHIPPED, self::STATUS_COMPLETED], true);
+    }
+
+    public function isCancellable(): bool
+    {
+        return in_array($this->status, [self::STATUS_PENDING, self::STATUS_CONFIRMED, self::STATUS_PROCESSING], true);
+    }
+
+    public function isCompletable(): bool
+    {
+        return $this->status === self::STATUS_SHIPPED;
     }
 
     public function supplier()

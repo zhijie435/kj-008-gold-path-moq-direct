@@ -2,6 +2,14 @@
 
 namespace App\Services;
 
+use App\Exceptions\Moq\InactiveProductException;
+use App\Exceptions\Moq\InsufficientMoqException;
+use App\Exceptions\Moq\InsufficientStockException;
+use App\Exceptions\Moq\InvalidPaymentException;
+use App\Exceptions\Moq\InvalidRefundException;
+use App\Exceptions\Moq\InvalidStatusTransitionException;
+use App\Exceptions\Moq\MoqDirectShipException;
+use App\Exceptions\Moq\ProductNotFoundException;
 use App\Models\MoqOrder;
 use App\Models\MoqOrderItem;
 use App\Models\Product;
@@ -89,27 +97,27 @@ class MoqDirectShipService
     {
         foreach ($items as $item) {
             if (empty($item['product_id']) || empty($item['quantity'])) {
-                throw new \InvalidArgumentException('产品ID和数量不能为空');
+                throw new MoqDirectShipException('产品ID和数量不能为空');
             }
 
             $product = Product::find($item['product_id']);
             if (!$product) {
-                throw new \InvalidArgumentException("产品不存在: {$item['product_id']}");
+                throw new ProductNotFoundException("产品不存在: {$item['product_id']}");
             }
 
             if (!$product->is_active) {
-                throw new \InvalidArgumentException("产品已下架: {$product->name}");
+                throw new InactiveProductException("产品已下架: {$product->name}");
             }
 
             if ($item['quantity'] < $product->moq) {
-                throw new \InvalidArgumentException(
+                throw new InsufficientMoqException(
                     "产品 {$product->name} 最小起订量为 {$product->moq} {$product->unit}，" .
                     "当前订购 {$item['quantity']} {$product->unit}"
                 );
             }
 
             if ($item['quantity'] > $product->stock_quantity) {
-                throw new \InvalidArgumentException(
+                throw new InsufficientStockException(
                     "产品 {$product->name} 库存不足，当前库存 {$product->stock_quantity} {$product->unit}"
                 );
             }
@@ -133,9 +141,7 @@ class MoqDirectShipService
 
     public function confirmOrder(MoqOrder $order): MoqOrder
     {
-        if ($order->status !== MoqOrder::STATUS_PENDING) {
-            throw new \InvalidArgumentException('只有待确认状态的订单才能确认');
-        }
+        $order->assertCanTransitionTo(MoqOrder::STATUS_CONFIRMED);
 
         return DB::transaction(function () use ($order) {
             $order->update([
@@ -151,10 +157,7 @@ class MoqDirectShipService
 
     public function processOrder(MoqOrder $order): MoqOrder
     {
-        $allowedStatuses = [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING];
-        if (!in_array($order->status, $allowedStatuses)) {
-            throw new \InvalidArgumentException('只有已确认或处理中的订单才能开始处理');
-        }
+        $order->assertCanTransitionTo(MoqOrder::STATUS_PROCESSING);
 
         $order->update([
             'status' => MoqOrder::STATUS_PROCESSING,
@@ -165,9 +168,8 @@ class MoqDirectShipService
 
     public function shipOrder(MoqOrder $order, array $shipmentData): Shipment
     {
-        $allowedStatuses = [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING, MoqOrder::STATUS_SHIPPED];
-        if (!in_array($order->status, $allowedStatuses)) {
-            throw new \InvalidArgumentException('当前订单状态不支持发货');
+        if (!$order->isShippable()) {
+            throw InvalidStatusTransitionException::for($order->status, MoqOrder::STATUS_SHIPPED);
         }
 
         return DB::transaction(function () use ($order, $shipmentData) {
@@ -186,16 +188,16 @@ class MoqDirectShipService
             $this->updateShippedQuantity($order, $shipmentData['items'] ?? []);
 
             $order->refresh();
-            if ($order->is_fully_shipped) {
-                $order->update([
-                    'status' => MoqOrder::STATUS_SHIPPED,
-                    'shipped_at' => now(),
-                ]);
-            } else {
-                $order->update([
-                    'status' => MoqOrder::STATUS_PROCESSING,
-                ]);
-            }
+            $targetStatus = $order->is_fully_shipped
+                ? MoqOrder::STATUS_SHIPPED
+                : MoqOrder::STATUS_PROCESSING;
+
+            $order->assertCanTransitionTo($targetStatus);
+
+            $order->update([
+                'status' => $targetStatus,
+                'shipped_at' => $targetStatus === MoqOrder::STATUS_SHIPPED ? now() : $order->shipped_at,
+            ]);
 
             return $shipment->load('order');
         });
@@ -208,7 +210,7 @@ class MoqDirectShipService
             if ($orderItem && $orderItem->moq_order_id == $order->id) {
                 $newShipped = $orderItem->shipped_quantity + ($shipItem['quantity'] ?? 0);
                 if ($newShipped > $orderItem->quantity) {
-                    throw new \InvalidArgumentException("发货数量不能超过订购数量");
+                    throw new MoqDirectShipException('发货数量不能超过订购数量');
                 }
                 $orderItem->update(['shipped_quantity' => $newShipped]);
             }
@@ -222,7 +224,7 @@ class MoqDirectShipService
             if ($product) {
                 $newStock = $product->stock_quantity - $item->quantity;
                 if ($newStock < 0) {
-                    throw new \InvalidArgumentException("产品 {$product->name} 库存不足");
+                    throw new InsufficientStockException("产品 {$product->name} 库存不足");
                 }
                 $product->update(['stock_quantity' => $newStock]);
             }
@@ -241,12 +243,10 @@ class MoqDirectShipService
 
     public function completeOrder(MoqOrder $order): MoqOrder
     {
-        if ($order->status !== MoqOrder::STATUS_SHIPPED) {
-            throw new \InvalidArgumentException('只有已发货状态的订单才能完成');
-        }
+        $order->assertCanTransitionTo(MoqOrder::STATUS_COMPLETED);
 
         if (!$order->is_fully_shipped) {
-            throw new \InvalidArgumentException('订单尚未全部发货，无法完成');
+            throw new MoqDirectShipException('订单尚未全部发货，无法完成');
         }
 
         DB::transaction(function () use ($order) {
@@ -270,10 +270,7 @@ class MoqDirectShipService
 
     public function cancelOrder(MoqOrder $order, string $reason = ''): MoqOrder
     {
-        $allowedStatuses = [MoqOrder::STATUS_PENDING, MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING];
-        if (!in_array($order->status, $allowedStatuses)) {
-            throw new \InvalidArgumentException('当前订单状态不支持取消');
-        }
+        $order->assertCanTransitionTo(MoqOrder::STATUS_CANCELLED);
 
         return DB::transaction(function () use ($order, $reason) {
             if (in_array($order->status, [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING])) {
@@ -293,12 +290,12 @@ class MoqDirectShipService
 
     public function refundOrder(MoqOrder $order, float $amount, string $reason = ''): MoqOrder
     {
-        if (!in_array($order->status, [MoqOrder::STATUS_SHIPPED, MoqOrder::STATUS_COMPLETED])) {
-            throw new \InvalidArgumentException('当前订单状态不支持退款');
+        if (!$order->isRefundable()) {
+            throw new InvalidRefundException('当前订单状态不支持退款');
         }
 
         if ($amount <= 0 || $amount > $order->paid_amount) {
-            throw new \InvalidArgumentException('退款金额无效');
+            throw new InvalidRefundException('退款金额无效');
         }
 
         $order->update([
@@ -308,7 +305,8 @@ class MoqDirectShipService
                 : "退款: {$amount}, 原因: {$reason}",
         ]);
 
-        if ($order->paid_amount <= 0 && in_array($order->status, [MoqOrder::STATUS_COMPLETED, MoqOrder::STATUS_SHIPPED])) {
+        if ($order->paid_amount <= 0 && $order->isRefundable()) {
+            $order->assertCanTransitionTo(MoqOrder::STATUS_REFUNDED);
             $order->update(['status' => MoqOrder::STATUS_REFUNDED]);
         }
 
@@ -317,13 +315,13 @@ class MoqDirectShipService
 
     public function payOrder(MoqOrder $order, float $amount, string $paymentMethod): MoqOrder
     {
-        if (in_array($order->status, [MoqOrder::STATUS_CANCELLED, MoqOrder::STATUS_REFUNDED])) {
-            throw new \InvalidArgumentException('当前订单状态不支持支付');
+        if (!$order->isPayable()) {
+            throw new InvalidPaymentException('当前订单状态不支持支付');
         }
 
         $newPaidAmount = $order->paid_amount + $amount;
         if ($newPaidAmount > $order->payable_amount) {
-            throw new \InvalidArgumentException('支付金额超过应付金额');
+            throw new InvalidPaymentException('支付金额超过应付金额');
         }
 
         $order->update([
@@ -333,6 +331,32 @@ class MoqDirectShipService
         ]);
 
         return $order->fresh()->load('items', 'supplier', 'shipments');
+    }
+
+    public function updateOrder(MoqOrder $order, array $data): MoqOrder
+    {
+        $order->update($data);
+
+        if (isset($data['shipping_fee']) || isset($data['discount_amount'])) {
+            $totalAmount = (float) $order->items->sum('total_price');
+            $shippingFee = (float) ($data['shipping_fee'] ?? $order->shipping_fee);
+            $discountAmount = (float) ($data['discount_amount'] ?? $order->discount_amount);
+            $order->update([
+                'total_amount' => $totalAmount,
+                'payable_amount' => $totalAmount + $shippingFee - $discountAmount,
+            ]);
+        }
+
+        return $order->load('items', 'supplier', 'shipments');
+    }
+
+    public function deleteOrder(MoqOrder $order): void
+    {
+        if (!in_array($order->status, [MoqOrder::STATUS_PENDING, MoqOrder::STATUS_CANCELLED], true)) {
+            throw new MoqDirectShipException('只有待确认或已取消的订单才能删除');
+        }
+
+        $order->delete();
     }
 
     public function getOrderList(array $params = [])
@@ -555,10 +579,13 @@ class MoqDirectShipService
 
             foreach ($statusMap as $keyword => $status) {
                 if (strpos($trackingData['status'], $keyword) !== false) {
-                    $shipment->update(['status' => $status]);
+                    if ($status !== $shipment->status) {
+                        $shipment->assertCanTransitionTo($status);
+                        $shipment->update(['status' => $status]);
 
-                    if ($status === Shipment::STATUS_DELIVERED && empty($shipment->delivered_at)) {
-                        $shipment->update(['delivered_at' => now()]);
+                        if ($status === Shipment::STATUS_DELIVERED && empty($shipment->delivered_at)) {
+                            $shipment->update(['delivered_at' => now()]);
+                        }
                     }
                     break;
                 }
@@ -574,6 +601,7 @@ class MoqDirectShipService
             });
 
             if ($allDelivered) {
+                $order->assertCanTransitionTo(MoqOrder::STATUS_COMPLETED);
                 $order->update([
                     'status' => MoqOrder::STATUS_COMPLETED,
                     'completed_at' => now(),
@@ -582,5 +610,154 @@ class MoqDirectShipService
         }
 
         return $shipment->fresh()->load('order');
+    }
+
+    public function createShipment(array $data): Shipment
+    {
+        return DB::transaction(function () use ($data) {
+            $order = MoqOrder::findOrFail($data['moq_order_id']);
+
+            if (!$order->isShippable()) {
+                throw InvalidStatusTransitionException::for($order->status, MoqOrder::STATUS_SHIPPED);
+            }
+
+            $data['shipment_no'] = $data['shipment_no'] ?? $this->generateShipmentNo();
+            $data['status'] = $data['status'] ?? Shipment::STATUS_PENDING;
+            $data['carrier_name'] = $data['carrier_name']
+                ?? ($this->carriers[$data['carrier_code']] ?? $data['carrier_code']);
+
+            $shipment = Shipment::create($data);
+
+            $this->updateShippedQuantity($order, $data['ship_items'] ?? []);
+
+            $order->refresh();
+            $allShipped = $order->items->every(function ($item) {
+                return $item->shipped_quantity >= $item->quantity;
+            });
+
+            if ($allShipped) {
+                $order->assertCanTransitionTo(MoqOrder::STATUS_SHIPPED);
+                $order->update([
+                    'status' => MoqOrder::STATUS_SHIPPED,
+                    'shipped_at' => now(),
+                ]);
+            } else {
+                $order->assertCanTransitionTo(MoqOrder::STATUS_PROCESSING);
+                $order->update(['status' => MoqOrder::STATUS_PROCESSING]);
+            }
+
+            return $shipment->load('order.items');
+        });
+    }
+
+    public function updateShipment(Shipment $shipment, array $data): Shipment
+    {
+        if ($shipment->status !== Shipment::STATUS_PENDING) {
+            throw new MoqDirectShipException('只有待发货状态的发货单才能编辑');
+        }
+
+        $shipment->update($data);
+
+        return $shipment->fresh();
+    }
+
+    public function deleteShipment(Shipment $shipment): void
+    {
+        if ($shipment->status !== Shipment::STATUS_PENDING) {
+            throw new MoqDirectShipException('只有待发货状态的发货单才能删除');
+        }
+
+        DB::transaction(function () use ($shipment) {
+            $order = $shipment->order;
+
+            $shipment->delete();
+
+            if ($order) {
+                $order->refresh();
+                $hasOtherShipments = $order->shipments()->exists();
+                if (!$hasOtherShipments && $order->status === MoqOrder::STATUS_SHIPPED) {
+                    $order->assertCanTransitionTo(MoqOrder::STATUS_PROCESSING);
+                    $order->update(['status' => MoqOrder::STATUS_PROCESSING]);
+                }
+            }
+        });
+    }
+
+    public function transitionShipment(Shipment $shipment, string $targetStatus, ?string $reason = null): Shipment
+    {
+        $shipment->assertCanTransitionTo($targetStatus);
+
+        return DB::transaction(function () use ($shipment, $targetStatus, $reason) {
+            $updateData = ['status' => $targetStatus];
+
+            if ($targetStatus === Shipment::STATUS_SHIPPED) {
+                $updateData['shipped_at'] = now();
+            }
+
+            if ($targetStatus === Shipment::STATUS_DELIVERED && empty($shipment->delivered_at)) {
+                $updateData['delivered_at'] = now();
+            }
+
+            if ($reason && in_array($targetStatus, [Shipment::STATUS_FAILED, Shipment::STATUS_RETURNED], true)) {
+                $label = $targetStatus === Shipment::STATUS_FAILED ? '派送失败原因' : '退回原因';
+                $updateData['remark'] = $shipment->remark
+                    ? $shipment->remark . "\n{$label}：{$reason}"
+                    : "{$label}：{$reason}";
+            }
+
+            $shipment->update($updateData);
+
+            $order = $shipment->order;
+            if ($order) {
+                $order->refresh();
+
+                if ($targetStatus === Shipment::STATUS_SHIPPED) {
+                    if ($order->is_fully_shipped) {
+                        $order->assertCanTransitionTo(MoqOrder::STATUS_SHIPPED);
+                        $order->update([
+                            'status' => MoqOrder::STATUS_SHIPPED,
+                            'shipped_at' => now(),
+                        ]);
+                    } elseif (in_array($order->status, [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PENDING], true)) {
+                        $order->assertCanTransitionTo(MoqOrder::STATUS_PROCESSING);
+                        $order->update(['status' => MoqOrder::STATUS_PROCESSING]);
+                    }
+                }
+
+                if ($targetStatus === Shipment::STATUS_DELIVERED) {
+                    $allDelivered = $order->shipments->every(function ($s) {
+                        return $s->status === Shipment::STATUS_DELIVERED;
+                    });
+
+                    if ($allDelivered && $order->status === MoqOrder::STATUS_SHIPPED) {
+                        $order->assertCanTransitionTo(MoqOrder::STATUS_COMPLETED);
+                        $order->update([
+                            'status' => MoqOrder::STATUS_COMPLETED,
+                            'completed_at' => now(),
+                        ]);
+                    }
+                }
+            }
+
+            return $shipment->fresh()->load('order');
+        });
+    }
+
+    public function getShipmentStats(): array
+    {
+        return [
+            'total' => Shipment::count(),
+            'pending' => Shipment::where('status', Shipment::STATUS_PENDING)->count(),
+            'shipped' => Shipment::whereIn('status', [
+                Shipment::STATUS_PICKED,
+                Shipment::STATUS_SHIPPED,
+                Shipment::STATUS_IN_TRANSIT,
+            ])->count(),
+            'delivered' => Shipment::where('status', Shipment::STATUS_DELIVERED)->count(),
+            'exception' => Shipment::whereIn('status', [
+                Shipment::STATUS_FAILED,
+                Shipment::STATUS_RETURNED,
+            ])->count(),
+        ];
     }
 }

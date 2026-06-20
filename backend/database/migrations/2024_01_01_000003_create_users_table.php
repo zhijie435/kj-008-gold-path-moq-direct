@@ -16,13 +16,15 @@ return new class extends Migration
             $table->string('password');
             $table->foreignId('tenant_id')->nullable()->constrained('tenants')->onDelete('set null');
             $table->foreignId('school_id')->nullable()->constrained('schools')->onDelete('set null');
-            $table->enum('type', ['admin', 'teacher', 'student'])->default('student');
+            $table->string('phone', 20)->nullable();
+            $table->string('avatar', 255)->nullable();
+            $table->enum('role', ['admin', 'operator', 'viewer'])->default('viewer');
             $table->boolean('is_active')->default(true);
             $table->rememberToken();
             $table->timestamps();
             $table->softDeletes();
 
-            $table->index(['type', 'is_active']);
+            $table->index(['role', 'is_active']);
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
