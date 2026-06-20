@@ -145,7 +145,7 @@ class MoqDirectShipService
 
             $this->deductStock($order);
 
-            return $order->fresh();
+            return $order->fresh()->load('items', 'supplier', 'shipments');
         });
     }
 
@@ -160,7 +160,7 @@ class MoqDirectShipService
             'status' => MoqOrder::STATUS_PROCESSING,
         ]);
 
-        return $order->fresh();
+        return $order->fresh()->load('items', 'supplier', 'shipments');
     }
 
     public function shipOrder(MoqOrder $order, array $shipmentData): Shipment
@@ -193,7 +193,7 @@ class MoqDirectShipService
                 ]);
             } else {
                 $order->update([
-                    'status' => MoqOrder::STATUS_SHIPPED,
+                    'status' => MoqOrder::STATUS_PROCESSING,
                 ]);
             }
 
@@ -249,32 +249,34 @@ class MoqDirectShipService
             throw new \InvalidArgumentException('订单尚未全部发货，无法完成');
         }
 
-        $order->update([
-            'status' => MoqOrder::STATUS_COMPLETED,
-            'completed_at' => now(),
-        ]);
+        DB::transaction(function () use ($order) {
+            $order->update([
+                'status' => MoqOrder::STATUS_COMPLETED,
+                'completed_at' => now(),
+            ]);
 
-        foreach ($order->shipments as $shipment) {
-            if ($shipment->status !== Shipment::STATUS_DELIVERED) {
-                $shipment->update([
-                    'status' => Shipment::STATUS_DELIVERED,
-                    'delivered_at' => now(),
-                ]);
+            foreach ($order->shipments as $shipment) {
+                if ($shipment->status !== Shipment::STATUS_DELIVERED) {
+                    $shipment->update([
+                        'status' => Shipment::STATUS_DELIVERED,
+                        'delivered_at' => now(),
+                    ]);
+                }
             }
-        }
+        });
 
-        return $order->fresh();
+        return $order->fresh()->load('items', 'supplier', 'shipments');
     }
 
     public function cancelOrder(MoqOrder $order, string $reason = ''): MoqOrder
     {
-        $allowedStatuses = [MoqOrder::STATUS_PENDING, MoqOrder::STATUS_CONFIRMED];
+        $allowedStatuses = [MoqOrder::STATUS_PENDING, MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING];
         if (!in_array($order->status, $allowedStatuses)) {
             throw new \InvalidArgumentException('当前订单状态不支持取消');
         }
 
         return DB::transaction(function () use ($order, $reason) {
-            if (in_array($order->status, [MoqOrder::STATUS_CONFIRMED])) {
+            if (in_array($order->status, [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING])) {
                 $this->restoreStock($order);
             }
 
@@ -285,7 +287,7 @@ class MoqDirectShipService
                     : "取消原因: {$reason}",
             ]);
 
-            return $order->fresh();
+            return $order->fresh()->load('items', 'supplier', 'shipments');
         });
     }
 
@@ -306,11 +308,11 @@ class MoqDirectShipService
                 : "退款: {$amount}, 原因: {$reason}",
         ]);
 
-        if ($order->paid_amount <= 0 && $order->status === MoqOrder::STATUS_COMPLETED) {
+        if ($order->paid_amount <= 0 && in_array($order->status, [MoqOrder::STATUS_COMPLETED, MoqOrder::STATUS_SHIPPED])) {
             $order->update(['status' => MoqOrder::STATUS_REFUNDED]);
         }
 
-        return $order->fresh();
+        return $order->fresh()->load('items', 'supplier', 'shipments');
     }
 
     public function payOrder(MoqOrder $order, float $amount, string $paymentMethod): MoqOrder
@@ -330,7 +332,7 @@ class MoqDirectShipService
             'paid_at' => $newPaidAmount >= $order->payable_amount ? now() : $order->paid_at,
         ]);
 
-        return $order->fresh();
+        return $order->fresh()->load('items', 'supplier', 'shipments');
     }
 
     public function getOrderList(array $params = [])
@@ -563,6 +565,22 @@ class MoqDirectShipService
             }
         }
 
-        return $shipment->fresh();
+        $shipment->refresh();
+        $order = $shipment->order;
+
+        if ($order && $order->status === MoqOrder::STATUS_SHIPPED) {
+            $allDelivered = $order->shipments->every(function ($s) {
+                return $s->status === Shipment::STATUS_DELIVERED;
+            });
+
+            if ($allDelivered) {
+                $order->update([
+                    'status' => MoqOrder::STATUS_COMPLETED,
+                    'completed_at' => now(),
+                ]);
+            }
+        }
+
+        return $shipment->fresh()->load('order');
     }
 }

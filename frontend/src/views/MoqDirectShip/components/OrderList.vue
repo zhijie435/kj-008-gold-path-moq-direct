@@ -120,7 +120,7 @@
               发货
             </el-button>
             <el-button
-              v-if="row.status === 'pending' || row.status === 'confirmed'"
+              v-if="row.status === 'pending' || row.status === 'confirmed' || row.status === 'processing'"
               type="danger"
               link
               size="small"

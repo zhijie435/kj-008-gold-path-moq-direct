@@ -57,18 +57,26 @@ class MoqOrderController extends Controller
         ];
 
         return response()->json([
-            'data' => $orders->items(),
-            'total' => $orders->total(),
-            'current_page' => $orders->currentPage(),
-            'per_page' => $orders->perPage(),
-            'stats' => $stats,
+            'code' => 0,
+            'message' => 'success',
+            'data' => [
+                'list' => $orders->items(),
+                'total' => $orders->total(),
+                'current_page' => $orders->currentPage(),
+                'per_page' => $orders->perPage(),
+                'stats' => $stats,
+            ],
         ]);
     }
 
     public function show(MoqOrder $order)
     {
         $order->load(['supplier', 'items', 'shipments']);
-        return response()->json(['data' => $order]);
+        return response()->json([
+            'code' => 0,
+            'message' => 'success',
+            'data' => $order,
+        ]);
     }
 
     public function store(Request $request)
@@ -153,6 +161,7 @@ class MoqOrderController extends Controller
             $order->load(['items', 'supplier']);
 
             return response()->json([
+                'code' => 0,
                 'message' => '订单创建成功',
                 'data' => $order,
             ], 201);
@@ -195,6 +204,7 @@ class MoqOrderController extends Controller
         $order->load(['items', 'supplier', 'shipments']);
 
         return response()->json([
+            'code' => 0,
             'message' => '订单更新成功',
             'data' => $order,
         ]);
@@ -204,14 +214,18 @@ class MoqOrderController extends Controller
     {
         if ($order->status !== MoqOrder::STATUS_PENDING && $order->status !== MoqOrder::STATUS_CANCELLED) {
             return response()->json([
+                'code' => 422,
                 'message' => '只有待确认或已取消的订单才能删除',
+                'data' => null,
             ], 422);
         }
 
         $order->delete();
 
         return response()->json([
+            'code' => 0,
             'message' => '订单删除成功',
+            'data' => null,
         ]);
     }
 
@@ -219,7 +233,9 @@ class MoqOrderController extends Controller
     {
         if ($order->status !== MoqOrder::STATUS_PENDING) {
             return response()->json([
+                'code' => 422,
                 'message' => '只有待确认的订单才能确认',
+                'data' => null,
             ], 422);
         }
 
@@ -230,6 +246,7 @@ class MoqOrderController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '订单确认成功',
             'data' => $order,
         ]);
@@ -239,7 +256,9 @@ class MoqOrderController extends Controller
     {
         if (in_array($order->status, [MoqOrder::STATUS_COMPLETED, MoqOrder::STATUS_CANCELLED, MoqOrder::STATUS_REFUNDED])) {
             return response()->json([
+                'code' => 422,
                 'message' => '当前订单状态不允许取消',
+                'data' => null,
             ], 422);
         }
 
@@ -250,6 +269,7 @@ class MoqOrderController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '订单取消成功',
             'data' => $order,
         ]);
@@ -259,7 +279,9 @@ class MoqOrderController extends Controller
     {
         if (!in_array($order->status, [MoqOrder::STATUS_CONFIRMED])) {
             return response()->json([
+                'code' => 422,
                 'message' => '只有已确认的订单才能开始处理',
+                'data' => null,
             ], 422);
         }
 
@@ -269,6 +291,7 @@ class MoqOrderController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '订单已开始处理',
             'data' => $order,
         ]);
@@ -278,7 +301,9 @@ class MoqOrderController extends Controller
     {
         if (!in_array($order->status, [MoqOrder::STATUS_SHIPPED])) {
             return response()->json([
+                'code' => 422,
                 'message' => '只有已发货的订单才能完成',
+                'data' => null,
             ], 422);
         }
 
@@ -289,6 +314,7 @@ class MoqOrderController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '订单已完成',
             'data' => $order,
         ]);
@@ -297,6 +323,8 @@ class MoqOrderController extends Controller
     public function getStatusOptions()
     {
         return response()->json([
+            'code' => 0,
+            'message' => 'success',
             'data' => MoqOrder::getStatusOptions(),
         ]);
     }
@@ -304,6 +332,8 @@ class MoqOrderController extends Controller
     public function getSourceOptions()
     {
         return response()->json([
+            'code' => 0,
+            'message' => 'success',
             'data' => MoqOrder::getSourceOptions(),
         ]);
     }
@@ -311,6 +341,8 @@ class MoqOrderController extends Controller
     public function getPaymentOptions()
     {
         return response()->json([
+            'code' => 0,
+            'message' => 'success',
             'data' => MoqOrder::getPaymentOptions(),
         ]);
     }
@@ -332,7 +364,253 @@ class MoqOrderController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '支付信息更新成功',
+            'data' => $order,
+        ]);
+    }
+
+    public function statistics(Request $request)
+    {
+        $dateStart = $request->input('date_start', now()->startOfMonth()->toDateString());
+        $dateEnd = $request->input('date_end', now()->endOfMonth()->toDateString());
+
+        $orderQuery = MoqOrder::whereBetween('created_at', [$dateStart, $dateEnd . ' 23:59:59']);
+
+        $totalOrders = $orderQuery->count();
+        $totalAmount = $orderQuery->sum('payable_amount');
+        $paidAmount = $orderQuery->sum('paid_amount');
+
+        $statusStats = MoqOrder::whereBetween('created_at', [$dateStart, $dateEnd . ' 23:59:59'])
+            ->selectRaw('status, COUNT(*) as count, SUM(payable_amount) as amount')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        $productCount = \App\Models\Product::count();
+        $activeProductCount = \App\Models\Product::where('is_active', true)->count();
+        $lowStockCount = \App\Models\Product::whereRaw('stock_quantity <= safety_stock')->count();
+
+        $supplierCount = \App\Models\Supplier::count();
+        $activeSupplierCount = \App\Models\Supplier::where('is_active', true)->count();
+
+        $shipmentCount = \App\Models\Shipment::whereBetween('shipped_at', [$dateStart, $dateEnd . ' 23:59:59'])
+            ->count();
+        $deliveredCount = \App\Models\Shipment::whereBetween('delivered_at', [$dateStart, $dateEnd . ' 23:59:59'])
+            ->count();
+
+        $pendingCount = $statusStats[MoqOrder::STATUS_PENDING] ?? 0;
+        $confirmedCount = $statusStats[MoqOrder::STATUS_CONFIRMED] ?? 0;
+        $processingCount = $statusStats[MoqOrder::STATUS_PROCESSING] ?? 0;
+        $shippedCount = $statusStats[MoqOrder::STATUS_SHIPPED] ?? 0;
+        $completedCount = $statusStats[MoqOrder::STATUS_COMPLETED] ?? 0;
+        $cancelledCount = $statusStats[MoqOrder::STATUS_CANCELLED] ?? 0;
+
+        $stats = [
+            'orders' => [
+                'total' => $totalOrders,
+                'total_amount' => round($totalAmount, 2),
+                'paid_amount' => round($paidAmount, 2),
+                'unpaid_amount' => round($totalAmount - $paidAmount, 2),
+                'pending' => $pendingCount,
+                'confirmed' => $confirmedCount,
+                'processing' => $processingCount,
+                'shipped' => $shippedCount,
+                'completed' => $completedCount,
+                'cancelled' => $cancelledCount,
+            ],
+            'products' => [
+                'total' => $productCount,
+                'active' => $activeProductCount,
+                'low_stock' => $lowStockCount,
+            ],
+            'suppliers' => [
+                'total' => $supplierCount,
+                'active' => $activeSupplierCount,
+            ],
+            'shipments' => [
+                'total' => $shipmentCount,
+                'delivered' => $deliveredCount,
+            ],
+            'date_range' => [
+                'start' => $dateStart,
+                'end' => $dateEnd,
+            ],
+        ];
+
+        return response()->json([
+            'code' => 0,
+            'message' => 'success',
+            'data' => $stats,
+        ]);
+    }
+
+    public function ship(Request $request, MoqOrder $order)
+    {
+        $validated = $request->validate([
+            'carrier_code' => 'required|string|max:50',
+            'carrier_name' => 'nullable|string|max:100',
+            'tracking_no' => 'required|string|max:100',
+            'shipping_method' => 'nullable|string|max:50',
+            'shipping_cost' => 'nullable|numeric|min:0',
+            'weight' => 'nullable|numeric|min:0',
+            'package_count' => 'nullable|integer|min:1',
+            'package_info' => 'nullable|array',
+            'remark' => 'nullable|string',
+            'items' => 'nullable|array',
+            'items.*.order_item_id' => 'required_with:items|exists:moq_order_items,id',
+            'items.*.quantity' => 'required_with:items|integer|min:1',
+        ]);
+
+        $allowedStatuses = [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING, MoqOrder::STATUS_SHIPPED];
+        if (!in_array($order->status, $allowedStatuses)) {
+            return response()->json([
+                'code' => 422,
+                'message' => '当前订单状态不支持发货',
+                'data' => null,
+            ], 422);
+        }
+
+        return DB::transaction(function () use ($order, $validated) {
+            $carriers = collect(\App\Models\Shipment::getCarrierOptions())
+                ->pluck('label', 'value')
+                ->toArray();
+
+            $shipmentNo = 'SH' . date('YmdHis') . Str::random(4);
+            $carrierName = $validated['carrier_name']
+                ?? ($carriers[$validated['carrier_code']] ?? $validated['carrier_code']);
+
+            $shipment = \App\Models\Shipment::create([
+                'shipment_no' => $shipmentNo,
+                'moq_order_id' => $order->id,
+                'carrier_code' => $validated['carrier_code'],
+                'carrier_name' => $carrierName,
+                'tracking_no' => $validated['tracking_no'],
+                'shipping_method' => $validated['shipping_method'] ?? null,
+                'shipping_cost' => $validated['shipping_cost'] ?? 0,
+                'weight' => $validated['weight'] ?? 0,
+                'package_count' => $validated['package_count'] ?? 1,
+                'package_info' => $validated['package_info'] ?? null,
+                'status' => \App\Models\Shipment::STATUS_SHIPPED,
+                'shipped_at' => now(),
+                'remark' => $validated['remark'] ?? null,
+                'created_by' => auth()->id(),
+            ]);
+
+            if (isset($validated['items']) && is_array($validated['items'])) {
+                foreach ($validated['items'] as $shipItem) {
+                    $orderItem = MoqOrderItem::find($shipItem['order_item_id']);
+                    if ($orderItem && $orderItem->moq_order_id == $order->id) {
+                        $newShipped = $orderItem->shipped_quantity + ($shipItem['quantity'] ?? 0);
+                        if ($newShipped > $orderItem->quantity) {
+                            throw new \InvalidArgumentException("发货数量不能超过订购数量");
+                        }
+                        $orderItem->update(['shipped_quantity' => $newShipped]);
+                    }
+                }
+            }
+
+            $order->refresh();
+            if ($order->is_fully_shipped) {
+                $order->update([
+                    'status' => MoqOrder::STATUS_SHIPPED,
+                    'shipped_at' => now(),
+                    'updated_by' => auth()->id(),
+                ]);
+            } else {
+                $order->update([
+                    'status' => MoqOrder::STATUS_PROCESSING,
+                    'updated_by' => auth()->id(),
+                ]);
+            }
+
+            $shipment->load('order');
+
+            return response()->json([
+                'code' => 0,
+                'message' => '发货成功',
+                'data' => $shipment,
+            ]);
+        });
+    }
+
+    public function pay(Request $request, MoqOrder $order)
+    {
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0',
+            'payment_method' => 'required|string|max:20',
+        ]);
+
+        if (in_array($order->status, [MoqOrder::STATUS_CANCELLED, MoqOrder::STATUS_REFUNDED])) {
+            return response()->json([
+                'code' => 422,
+                'message' => '当前订单状态不支持支付',
+                'data' => null,
+            ], 422);
+        }
+
+        $newPaidAmount = $order->paid_amount + $validated['amount'];
+        if ($newPaidAmount > $order->payable_amount) {
+            return response()->json([
+                'code' => 422,
+                'message' => '支付金额超过应付金额',
+                'data' => null,
+            ], 422);
+        }
+
+        $order->update([
+            'paid_amount' => $newPaidAmount,
+            'payment_method' => $validated['payment_method'],
+            'paid_at' => $newPaidAmount >= $order->payable_amount ? now() : $order->paid_at,
+            'updated_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'code' => 0,
+            'message' => '支付成功',
+            'data' => $order,
+        ]);
+    }
+
+    public function refund(Request $request, MoqOrder $order)
+    {
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0',
+            'reason' => 'nullable|string',
+        ]);
+
+        if (!in_array($order->status, [MoqOrder::STATUS_SHIPPED, MoqOrder::STATUS_COMPLETED])) {
+            return response()->json([
+                'code' => 422,
+                'message' => '当前订单状态不支持退款',
+                'data' => null,
+            ], 422);
+        }
+
+        $amount = $validated['amount'];
+        if ($amount <= 0 || $amount > $order->paid_amount) {
+            return response()->json([
+                'code' => 422,
+                'message' => '退款金额无效',
+                'data' => null,
+            ], 422);
+        }
+
+        $order->update([
+            'paid_amount' => $order->paid_amount - $amount,
+            'internal_note' => $order->internal_note
+                ? $order->internal_note . "\n退款: {$amount}, 原因: " . ($validated['reason'] ?? '')
+                : "退款: {$amount}, 原因: " . ($validated['reason'] ?? ''),
+            'updated_by' => auth()->id(),
+        ]);
+
+        if ($order->paid_amount <= 0 && in_array($order->status, [MoqOrder::STATUS_COMPLETED, MoqOrder::STATUS_SHIPPED])) {
+            $order->update(['status' => MoqOrder::STATUS_REFUNDED]);
+        }
+
+        return response()->json([
+            'code' => 0,
+            'message' => '退款成功',
             'data' => $order,
         ]);
     }

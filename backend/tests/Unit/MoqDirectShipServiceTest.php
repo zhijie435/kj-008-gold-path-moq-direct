@@ -577,4 +577,205 @@ class MoqDirectShipServiceTest extends TestCase
 
         $this->assertEquals(460.00, $totals['total_amount']);
     }
+
+    public function test_partial_ship_order_keeps_processing_status()
+    {
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'supplier_id' => $supplier->id,
+            'moq' => 10,
+            'price' => 100.00,
+            'stock_quantity' => 100,
+        ]);
+
+        $order = MoqOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'confirmed',
+        ]);
+
+        $orderItem = MoqOrderItem::factory()->create([
+            'moq_order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 20,
+            'unit_price' => 100.00,
+            'total_price' => 2000.00,
+            'shipped_quantity' => 0,
+        ]);
+
+        $shipmentData = [
+            'carrier_code' => 'sf',
+            'tracking_no' => 'SF1234567890',
+            'shipping_cost' => 15.00,
+            'weight' => 5.5,
+            'items' => [
+                [
+                    'order_item_id' => $orderItem->id,
+                    'quantity' => 10,
+                ],
+            ],
+        ];
+
+        $shipment = $this->moqService->shipOrder($order, $shipmentData);
+
+        $this->assertInstanceOf(Shipment::class, $shipment);
+        $this->assertEquals('processing', $order->fresh()->status);
+        $this->assertEquals(10, $orderItem->fresh()->shipped_quantity);
+        $this->assertFalse($order->fresh()->is_fully_shipped);
+    }
+
+    public function test_full_ship_order_updates_to_shipped_status()
+    {
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'supplier_id' => $supplier->id,
+            'moq' => 10,
+            'price' => 100.00,
+            'stock_quantity' => 100,
+        ]);
+
+        $order = MoqOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'confirmed',
+        ]);
+
+        $orderItem = MoqOrderItem::factory()->create([
+            'moq_order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 20,
+            'unit_price' => 100.00,
+            'total_price' => 2000.00,
+            'shipped_quantity' => 0,
+        ]);
+
+        $shipmentData = [
+            'carrier_code' => 'sf',
+            'tracking_no' => 'SF1234567890',
+            'shipping_cost' => 15.00,
+            'weight' => 5.5,
+            'items' => [
+                [
+                    'order_item_id' => $orderItem->id,
+                    'quantity' => 20,
+                ],
+            ],
+        ];
+
+        $shipment = $this->moqService->shipOrder($order, $shipmentData);
+
+        $this->assertInstanceOf(Shipment::class, $shipment);
+        $this->assertEquals('shipped', $order->fresh()->status);
+        $this->assertEquals(20, $orderItem->fresh()->shipped_quantity);
+        $this->assertTrue($order->fresh()->is_fully_shipped);
+        $this->assertNotNull($order->fresh()->shipped_at);
+    }
+
+    public function test_cancel_processing_order()
+    {
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'supplier_id' => $supplier->id,
+            'stock_quantity' => 80,
+        ]);
+
+        $order = MoqOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'processing',
+        ]);
+
+        MoqOrderItem::factory()->create([
+            'moq_order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 20,
+            'shipped_quantity' => 0,
+        ]);
+
+        $cancelledOrder = $this->moqService->cancelOrder($order, '客户取消');
+
+        $this->assertEquals('cancelled', $cancelledOrder->status);
+        $this->assertStringContainsString('客户取消', $cancelledOrder->internal_note);
+        $this->assertEquals(100, $product->fresh()->stock_quantity);
+    }
+
+    public function test_update_tracking_auto_completes_order_when_all_delivered()
+    {
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'supplier_id' => $supplier->id,
+        ]);
+
+        $order = MoqOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'shipped',
+        ]);
+
+        MoqOrderItem::factory()->create([
+            'moq_order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 20,
+            'shipped_quantity' => 20,
+        ]);
+
+        $shipment = Shipment::factory()->create([
+            'moq_order_id' => $order->id,
+            'status' => 'in_transit',
+        ]);
+
+        $trackingData = [
+            'status' => '已签收',
+            'list' => [
+                ['time' => '2024-01-01 10:00:00', 'content' => '快件已签收'],
+            ],
+        ];
+
+        $updatedShipment = $this->moqService->updateTracking($shipment, $trackingData);
+
+        $this->assertEquals('delivered', $updatedShipment->status);
+        $this->assertNotNull($updatedShipment->delivered_at);
+        $this->assertEquals('completed', $order->fresh()->status);
+        $this->assertNotNull($order->fresh()->completed_at);
+    }
+
+    public function test_refund_shipped_order_sets_refunded_status()
+    {
+        $order = MoqOrder::factory()->create([
+            'payable_amount' => 1000.00,
+            'paid_amount' => 1000.00,
+            'status' => 'shipped',
+        ]);
+
+        $refundedOrder = $this->moqService->refundOrder($order, 1000.00, '全额退款');
+
+        $this->assertEquals(0, $refundedOrder->paid_amount);
+        $this->assertEquals('refunded', $refundedOrder->status);
+    }
+
+    public function test_order_operations_return_loaded_relations()
+    {
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'supplier_id' => $supplier->id,
+            'moq' => 10,
+            'price' => 100.00,
+            'stock_quantity' => 100,
+        ]);
+
+        $order = MoqOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'pending',
+        ]);
+
+        $orderItem = MoqOrderItem::factory()->create([
+            'moq_order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 20,
+            'shipped_quantity' => 0,
+        ]);
+
+        $confirmedOrder = $this->moqService->confirmOrder($order);
+
+        $this->assertTrue($confirmedOrder->relationLoaded('items'));
+        $this->assertTrue($confirmedOrder->relationLoaded('supplier'));
+        $this->assertTrue($confirmedOrder->relationLoaded('shipments'));
+        $this->assertEquals('confirmed', $confirmedOrder->status);
+    }
 }

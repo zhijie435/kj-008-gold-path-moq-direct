@@ -43,17 +43,25 @@ class ProductController extends Controller
         $products = $query->paginate($perPage);
 
         return response()->json([
-            'data' => $products->items(),
-            'total' => $products->total(),
-            'current_page' => $products->currentPage(),
-            'per_page' => $products->perPage(),
+            'code' => 0,
+            'message' => 'success',
+            'data' => [
+                'list' => $products->items(),
+                'total' => $products->total(),
+                'current_page' => $products->currentPage(),
+                'per_page' => $products->perPage(),
+            ],
         ]);
     }
 
     public function show(Product $product)
     {
         $product->load('supplier');
-        return response()->json(['data' => $product]);
+        return response()->json([
+            'code' => 0,
+            'message' => 'success',
+            'data' => $product,
+        ]);
     }
 
     public function store(Request $request)
@@ -89,6 +97,7 @@ class ProductController extends Controller
         $product->load('supplier');
 
         return response()->json([
+            'code' => 0,
             'message' => '商品创建成功',
             'data' => $product,
         ], 201);
@@ -127,6 +136,7 @@ class ProductController extends Controller
         $product->load('supplier');
 
         return response()->json([
+            'code' => 0,
             'message' => '商品更新成功',
             'data' => $product,
         ]);
@@ -137,7 +147,9 @@ class ProductController extends Controller
         $product->delete();
 
         return response()->json([
+            'code' => 0,
             'message' => '商品删除成功',
+            'data' => null,
         ]);
     }
 
@@ -149,6 +161,7 @@ class ProductController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '状态切换成功',
             'data' => $product,
         ]);
@@ -157,6 +170,8 @@ class ProductController extends Controller
     public function getUnitOptions()
     {
         return response()->json([
+            'code' => 0,
+            'message' => 'success',
             'data' => Product::getUnitOptions(),
         ]);
     }
@@ -164,7 +179,25 @@ class ProductController extends Controller
     public function getStatusOptions()
     {
         return response()->json([
+            'code' => 0,
+            'message' => 'success',
             'data' => Product::getStatusOptions(),
+        ]);
+    }
+
+    public function getCategories()
+    {
+        $categories = Product::whereNotNull('category')
+            ->where('category', '!=', '')
+            ->distinct()
+            ->pluck('category')
+            ->values()
+            ->toArray();
+
+        return response()->json([
+            'code' => 0,
+            'message' => 'success',
+            'data' => $categories,
         ]);
     }
 
@@ -191,6 +224,7 @@ class ProductController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '库存更新成功',
             'data' => $product,
         ]);

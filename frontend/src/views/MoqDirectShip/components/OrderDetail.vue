@@ -6,38 +6,38 @@
     size="700px"
     destroy-on-close
   >
-    <div v-if="order" class="order-detail">
+    <div v-if="orderDetail" class="order-detail">
       <div class="detail-header">
         <div class="order-status">
-          <el-tag :type="getStatusType(order.status)" size="large">
-            {{ getStatusLabel(order.status) }}
+          <el-tag :type="getStatusType(orderDetail.status)" size="large">
+            {{ getStatusLabel(orderDetail.status) }}
           </el-tag>
-          <span class="order-no">{{ order.order_no }}</span>
+          <span class="order-no">{{ orderDetail.order_no }}</span>
         </div>
         <div class="order-actions">
           <el-button
-            v-if="order.status === 'pending'"
+            v-if="orderDetail.status === 'pending'"
             type="primary"
             @click="handleConfirm"
           >
             确认订单
           </el-button>
           <el-button
-            v-if="order.status === 'confirmed' || order.status === 'processing'"
+            v-if="orderDetail.status === 'confirmed' || orderDetail.status === 'processing'"
             type="success"
             @click="handleShip"
           >
             发货
           </el-button>
           <el-button
-            v-if="order.status === 'shipped'"
+            v-if="orderDetail.status === 'shipped'"
             type="success"
             @click="handleComplete"
           >
             完成订单
           </el-button>
           <el-button
-            v-if="order.status === 'pending' || order.status === 'confirmed'"
+            v-if="orderDetail.status === 'pending' || orderDetail.status === 'confirmed' || orderDetail.status === 'processing'"
             type="danger"
             @click="handleCancel"
           >
@@ -47,32 +47,32 @@
       </div>
 
       <el-descriptions :column="2" border class="info-section">
-        <el-descriptions-item label="下单时间">{{ order.created_at }}</el-descriptions-item>
-        <el-descriptions-item label="订单来源">{{ getSourceLabel(order.source) }}</el-descriptions-item>
-        <el-descriptions-item label="供应商">{{ order.supplier?.name || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="下单时间">{{ orderDetail.created_at }}</el-descriptions-item>
+        <el-descriptions-item label="订单来源">{{ getSourceLabel(orderDetail.source) }}</el-descriptions-item>
+        <el-descriptions-item label="供应商">{{ orderDetail.supplier?.name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="支付方式">
-          {{ order.payment_method ? getPaymentLabel(order.payment_method) : '-' }}
+          {{ orderDetail.payment_method ? getPaymentLabel(orderDetail.payment_method) : '-' }}
         </el-descriptions-item>
         <el-descriptions-item label="支付状态">
-          <el-tag :type="order.is_fully_paid ? 'success' : 'warning'" size="small">
-            {{ order.is_fully_paid ? '已付清' : '未付清' }}
+          <el-tag :type="orderDetail.is_fully_paid ? 'success' : 'warning'" size="small">
+            {{ orderDetail.is_fully_paid ? '已付清' : '未付清' }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="付款时间">{{ order.paid_at || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="付款时间">{{ orderDetail.paid_at || '-' }}</el-descriptions-item>
       </el-descriptions>
 
       <h4 class="section-title">收货信息</h4>
       <el-descriptions :column="2" border class="info-section">
-        <el-descriptions-item label="收货人">{{ order.customer_name }}</el-descriptions-item>
-        <el-descriptions-item label="联系电话">{{ order.customer_phone }}</el-descriptions-item>
+        <el-descriptions-item label="收货人">{{ orderDetail.customer_name }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ orderDetail.customer_phone }}</el-descriptions-item>
         <el-descriptions-item label="收货地址" :span="2">
-          {{ order.full_address }}
-          <span v-if="order.address_detail">（{{ order.address_detail }}）</span>
+          {{ orderDetail.full_address }}
+          <span v-if="orderDetail.address_detail">（{{ orderDetail.address_detail }}）</span>
         </el-descriptions-item>
       </el-descriptions>
 
       <h4 class="section-title">商品信息</h4>
-      <el-table :data="order.items" border class="items-table">
+      <el-table :data="orderDetail.items" border class="items-table">
         <el-table-column prop="product_name" label="商品名称" min-width="200" />
         <el-table-column prop="product_sku" label="SKU" width="140" />
         <el-table-column prop="specification" label="规格" width="140">
@@ -102,33 +102,33 @@
       <div class="amount-section">
         <div class="amount-item">
           <span class="label">商品总额</span>
-          <span class="value">¥{{ formatMoney(order.total_amount) }}</span>
+          <span class="value">¥{{ formatMoney(orderDetail.total_amount) }}</span>
         </div>
         <div class="amount-item">
           <span class="label">运费</span>
-          <span class="value">¥{{ formatMoney(order.shipping_fee || 0) }}</span>
+          <span class="value">¥{{ formatMoney(orderDetail.shipping_fee || 0) }}</span>
         </div>
         <div class="amount-item">
           <span class="label">优惠</span>
-          <span class="value discount">-¥{{ formatMoney(order.discount_amount || 0) }}</span>
+          <span class="value discount">-¥{{ formatMoney(orderDetail.discount_amount || 0) }}</span>
         </div>
         <div class="amount-item total">
           <span class="label">应付金额</span>
-          <span class="value">¥{{ formatMoney(order.payable_amount) }}</span>
+          <span class="value">¥{{ formatMoney(orderDetail.payable_amount) }}</span>
         </div>
         <div class="amount-item">
           <span class="label">已付金额</span>
-          <span class="value paid">¥{{ formatMoney(order.paid_amount || 0) }}</span>
+          <span class="value paid">¥{{ formatMoney(orderDetail.paid_amount || 0) }}</span>
         </div>
         <div class="amount-item">
           <span class="label">待付金额</span>
-          <span class="value unpaid">¥{{ formatMoney(order.unpaid_amount || 0) }}</span>
+          <span class="value unpaid">¥{{ formatMoney(orderDetail.unpaid_amount || 0) }}</span>
         </div>
       </div>
 
       <h4 class="section-title">物流信息</h4>
-      <div v-if="order.shipments && order.shipments.length > 0">
-        <div v-for="shipment in order.shipments" :key="shipment.id" class="shipment-card">
+      <div v-if="orderDetail.shipments && orderDetail.shipments.length > 0">
+        <div v-for="shipment in orderDetail.shipments" :key="shipment.id" class="shipment-card">
           <div class="shipment-header">
             <span class="shipment-no">{{ shipment.shipment_no }}</span>
             <el-tag :type="getShipmentStatusType(shipment.status)" size="small">
@@ -146,9 +146,15 @@
 
       <h4 class="section-title">备注信息</h4>
       <el-descriptions :column="1" border class="info-section">
-        <el-descriptions-item label="客户备注">{{ order.remark || '无' }}</el-descriptions-item>
-        <el-descriptions-item label="内部备注">{{ order.internal_note || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="客户备注">{{ orderDetail.remark || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="内部备注">{{ orderDetail.internal_note || '无' }}</el-descriptions-item>
       </el-descriptions>
+    </div>
+
+    <div v-else-if="modelValue" class="loading-wrapper">
+      <el-empty description="加载中..." :image-size="80">
+        <el-button type="primary" @click="fetchOrderDetail">重新加载</el-button>
+      </el-empty>
     </div>
 
     <el-dialog
@@ -484,6 +490,13 @@ async function handleCancelSubmit() {
 
 <style scoped lang="scss">
 .order-detail {
+  .loading-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+  }
+
   .detail-header {
     display: flex;
     justify-content: space-between;

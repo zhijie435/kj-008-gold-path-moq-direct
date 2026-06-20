@@ -63,18 +63,26 @@ class ShipmentController extends Controller
         ];
 
         return response()->json([
-            'data' => $shipments->items(),
-            'total' => $shipments->total(),
-            'current_page' => $shipments->currentPage(),
-            'per_page' => $shipments->perPage(),
-            'stats' => $stats,
+            'code' => 0,
+            'message' => 'success',
+            'data' => [
+                'list' => $shipments->items(),
+                'total' => $shipments->total(),
+                'current_page' => $shipments->currentPage(),
+                'per_page' => $shipments->perPage(),
+                'stats' => $stats,
+            ],
         ]);
     }
 
     public function show(Shipment $shipment)
     {
         $shipment->load(['order.items', 'order.supplier']);
-        return response()->json(['data' => $shipment]);
+        return response()->json([
+            'code' => 0,
+            'message' => 'success',
+            'data' => $shipment,
+        ]);
     }
 
     public function store(Request $request)
@@ -100,7 +108,9 @@ class ShipmentController extends Controller
 
             if (!in_array($order->status, [MoqOrder::STATUS_CONFIRMED, MoqOrder::STATUS_PROCESSING, MoqOrder::STATUS_SHIPPED])) {
                 return response()->json([
+                    'code' => 422,
                     'message' => '当前订单状态不允许发货',
+                    'data' => null,
                 ], 422);
             }
 
@@ -150,6 +160,7 @@ class ShipmentController extends Controller
             $shipment->load(['order.items']);
 
             return response()->json([
+                'code' => 0,
                 'message' => '发货单创建成功',
                 'data' => $shipment,
             ], 201);
@@ -172,13 +183,16 @@ class ShipmentController extends Controller
 
         if ($shipment->status !== Shipment::STATUS_PENDING) {
             return response()->json([
+                'code' => 422,
                 'message' => '只有待发货状态的发货单才能编辑',
+                'data' => null,
             ], 422);
         }
 
         $shipment->update($validated);
 
         return response()->json([
+            'code' => 0,
             'message' => '发货单更新成功',
             'data' => $shipment,
         ]);
@@ -188,7 +202,9 @@ class ShipmentController extends Controller
     {
         if ($shipment->status !== Shipment::STATUS_PENDING) {
             return response()->json([
+                'code' => 422,
                 'message' => '只有待发货状态的发货单才能删除',
+                'data' => null,
             ], 422);
         }
 
@@ -208,7 +224,9 @@ class ShipmentController extends Controller
             }
 
             return response()->json([
+                'code' => 0,
                 'message' => '发货单删除成功',
+                'data' => null,
             ]);
         });
     }
@@ -217,7 +235,9 @@ class ShipmentController extends Controller
     {
         if ($shipment->status !== Shipment::STATUS_PENDING) {
             return response()->json([
+                'code' => 422,
                 'message' => '只有待发货状态的发货单才能发货',
+                'data' => null,
             ], 422);
         }
 
@@ -227,6 +247,7 @@ class ShipmentController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '发货成功',
             'data' => $shipment,
         ]);
@@ -236,13 +257,16 @@ class ShipmentController extends Controller
     {
         if (!in_array($shipment->status, [Shipment::STATUS_PENDING, Shipment::STATUS_SHIPPED])) {
             return response()->json([
+                'code' => 422,
                 'message' => '当前状态不允许标记已揽收',
+                'data' => null,
             ], 422);
         }
 
         $shipment->update(['status' => Shipment::STATUS_PICKED]);
 
         return response()->json([
+            'code' => 0,
             'message' => '已标记揽收',
             'data' => $shipment,
         ]);
@@ -252,13 +276,16 @@ class ShipmentController extends Controller
     {
         if (!in_array($shipment->status, [Shipment::STATUS_PICKED, Shipment::STATUS_SHIPPED])) {
             return response()->json([
+                'code' => 422,
                 'message' => '当前状态不允许标记运输中',
+                'data' => null,
             ], 422);
         }
 
         $shipment->update(['status' => Shipment::STATUS_IN_TRANSIT]);
 
         return response()->json([
+            'code' => 0,
             'message' => '已标记运输中',
             'data' => $shipment,
         ]);
@@ -268,7 +295,9 @@ class ShipmentController extends Controller
     {
         if (!in_array($shipment->status, [Shipment::STATUS_IN_TRANSIT, Shipment::STATUS_SHIPPED, Shipment::STATUS_PICKED])) {
             return response()->json([
+                'code' => 422,
                 'message' => '当前状态不允许标记已签收',
+                'data' => null,
             ], 422);
         }
 
@@ -290,6 +319,7 @@ class ShipmentController extends Controller
         }
 
         return response()->json([
+            'code' => 0,
             'message' => '已标记签收',
             'data' => $shipment,
         ]);
@@ -299,7 +329,9 @@ class ShipmentController extends Controller
     {
         if (in_array($shipment->status, [Shipment::STATUS_DELIVERED, Shipment::STATUS_RETURNED])) {
             return response()->json([
+                'code' => 422,
                 'message' => '当前状态不允许标记派送失败',
+                'data' => null,
             ], 422);
         }
 
@@ -309,6 +341,7 @@ class ShipmentController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '已标记派送失败',
             'data' => $shipment,
         ]);
@@ -318,7 +351,9 @@ class ShipmentController extends Controller
     {
         if ($shipment->status === Shipment::STATUS_DELIVERED) {
             return response()->json([
+                'code' => 422,
                 'message' => '已签收的发货单不能标记退回',
+                'data' => null,
             ], 422);
         }
 
@@ -328,6 +363,7 @@ class ShipmentController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '已标记退回',
             'data' => $shipment,
         ]);
@@ -336,6 +372,8 @@ class ShipmentController extends Controller
     public function getStatusOptions()
     {
         return response()->json([
+            'code' => 0,
+            'message' => 'success',
             'data' => Shipment::getStatusOptions(),
         ]);
     }
@@ -343,7 +381,73 @@ class ShipmentController extends Controller
     public function getCarrierOptions()
     {
         return response()->json([
+            'code' => 0,
+            'message' => 'success',
             'data' => Shipment::getCarrierOptions(),
+        ]);
+    }
+
+    public function updateTracking(Request $request, Shipment $shipment)
+    {
+        $validated = $request->validate([
+            'tracking_data' => 'nullable|array',
+            'status' => 'nullable|string',
+        ]);
+
+        $trackingData = $validated['tracking_data'] ?? [];
+        if (!empty($validated['status'])) {
+            $trackingData['status'] = $validated['status'];
+        }
+
+        $shipment->update([
+            'tracking_data' => $trackingData,
+        ]);
+
+        if (!empty($trackingData['status'])) {
+            $statusMap = [
+                '已签收' => Shipment::STATUS_DELIVERED,
+                '签收' => Shipment::STATUS_DELIVERED,
+                '派送中' => Shipment::STATUS_IN_TRANSIT,
+                '运输中' => Shipment::STATUS_IN_TRANSIT,
+                '在途中' => Shipment::STATUS_IN_TRANSIT,
+                '已发出' => Shipment::STATUS_SHIPPED,
+                '已揽收' => Shipment::STATUS_PICKED,
+                '失败' => Shipment::STATUS_FAILED,
+                '退回' => Shipment::STATUS_RETURNED,
+            ];
+
+            foreach ($statusMap as $keyword => $status) {
+                if (strpos($trackingData['status'], $keyword) !== false) {
+                    $shipment->update(['status' => $status]);
+
+                    if ($status === Shipment::STATUS_DELIVERED && empty($shipment->delivered_at)) {
+                        $shipment->update(['delivered_at' => now()]);
+
+                        $order = $shipment->order;
+                        if ($order) {
+                            $allDelivered = $order->shipments->every(function ($s) {
+                                return $s->status === Shipment::STATUS_DELIVERED;
+                            });
+
+                            if ($allDelivered && $order->status === MoqOrder::STATUS_SHIPPED) {
+                                $order->update([
+                                    'status' => MoqOrder::STATUS_COMPLETED,
+                                    'completed_at' => now(),
+                                ]);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        $shipment->load('order');
+
+        return response()->json([
+            'code' => 0,
+            'message' => '物流信息更新成功',
+            'data' => $shipment,
         ]);
     }
 }

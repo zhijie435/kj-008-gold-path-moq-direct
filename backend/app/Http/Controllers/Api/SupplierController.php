@@ -36,17 +36,25 @@ class SupplierController extends Controller
         $suppliers = $query->paginate($perPage);
 
         return response()->json([
-            'data' => $suppliers->items(),
-            'total' => $suppliers->total(),
-            'current_page' => $suppliers->currentPage(),
-            'per_page' => $suppliers->perPage(),
+            'code' => 0,
+            'message' => 'success',
+            'data' => [
+                'list' => $suppliers->items(),
+                'total' => $suppliers->total(),
+                'current_page' => $suppliers->currentPage(),
+                'per_page' => $suppliers->perPage(),
+            ],
         ]);
     }
 
     public function show(Supplier $supplier)
     {
         $supplier->load('products');
-        return response()->json(['data' => $supplier]);
+        return response()->json([
+            'code' => 0,
+            'message' => 'success',
+            'data' => $supplier,
+        ]);
     }
 
     public function store(Request $request)
@@ -75,6 +83,7 @@ class SupplierController extends Controller
         ]));
 
         return response()->json([
+            'code' => 0,
             'message' => '供应商创建成功',
             'data' => $supplier,
         ], 201);
@@ -106,6 +115,7 @@ class SupplierController extends Controller
         ]));
 
         return response()->json([
+            'code' => 0,
             'message' => '供应商更新成功',
             'data' => $supplier,
         ]);
@@ -115,14 +125,18 @@ class SupplierController extends Controller
     {
         if ($supplier->products()->exists()) {
             return response()->json([
+                'code' => 422,
                 'message' => '该供应商下存在商品，无法删除',
+                'data' => null,
             ], 422);
         }
 
         $supplier->delete();
 
         return response()->json([
+            'code' => 0,
             'message' => '供应商删除成功',
+            'data' => null,
         ]);
     }
 
@@ -134,6 +148,7 @@ class SupplierController extends Controller
         ]);
 
         return response()->json([
+            'code' => 0,
             'message' => '状态切换成功',
             'data' => $supplier,
         ]);
@@ -142,6 +157,8 @@ class SupplierController extends Controller
     public function getStatusOptions()
     {
         return response()->json([
+            'code' => 0,
+            'message' => 'success',
             'data' => Supplier::getStatusOptions(),
         ]);
     }
@@ -153,6 +170,10 @@ class SupplierController extends Controller
             ->orderBy('name', 'asc')
             ->get(['id', 'name', 'code', 'contact_person', 'phone']);
 
-        return response()->json(['data' => $suppliers]);
+        return response()->json([
+            'code' => 0,
+            'message' => 'success',
+            'data' => $suppliers,
+        ]);
     }
 }
